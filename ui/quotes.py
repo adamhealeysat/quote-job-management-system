@@ -8,7 +8,7 @@ implementing IPO 2 / the save_quote pseudocode from Criterion 5.
 import tkinter as tk
 from tkinter import ttk
 import customtkinter as ctk
-from datetime import date
+from datetime import date, datetime
 
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
@@ -79,31 +79,90 @@ class QuotesScreen(ctk.CTkFrame):
         style.configure("Quotes.Treeview.Heading", font=(FONT_FAMILY, 11, "bold"))
 
         columns = ("quote_id", "customer", "status", "total", "date")
-        tree = ttk.Treeview(
+        self.quote_tree = ttk.Treeview(
             self.body_frame, columns=columns, show="headings",
             style="Quotes.Treeview", height=15
         )
-        tree.heading("quote_id", text="Quote ID")
-        tree.heading("customer", text="Customer")
-        tree.heading("status", text="Status")
-        tree.heading("total", text="Total")
-        tree.heading("date", text="Date")
 
-        tree.column("quote_id", width=80, anchor="center")
-        tree.column("customer", width=200)
-        tree.column("status", width=100, anchor="center")
-        tree.column("total", width=100, anchor="e")
-        tree.column("date", width=120, anchor="center")
+        # Column heading labels and click-to-sort bindings (FR10)
+        heading_labels = {
+            "quote_id": "Quote ID", "customer": "Customer",
+            "status": "Status", "total": "Total", "date": "Date"
+        }
+        for col, label in heading_labels.items():
+            self.quote_tree.heading(col, text=label, command=lambda c=col: self._sort_quotes(c))
 
-        tree.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+        self.quote_tree.column("quote_id", width=80, anchor="center")
+        self.quote_tree.column("customer", width=200)
+        self.quote_tree.column("status", width=100, anchor="center")
+        self.quote_tree.column("total", width=100, anchor="e")
+        self.quote_tree.column("date", width=120, anchor="center")
 
+        self.quote_tree.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+
+        # Load raw rows (keep real types for correct sorting, not display strings)
         rows = self.db.run_query(
             "SELECT q.quote_id, c.customer_name, q.status, q.total_amount, q.quote_date "
-            "FROM Quotes q JOIN Customers c ON q.customer_id = c.customer_id "
-            "ORDER BY q.quote_id DESC"
+            "FROM Quotes q JOIN Customers c ON q.customer_id = c.customer_id"
         )
-        for quote_id, name, status, total, quote_date in rows:
-            tree.insert("", "end", values=(quote_id, name, status, f"${total:.2f}", quote_date))
+        self.quote_rows = rows
+
+        # Default sort: Quote ID ascending
+        self.sort_column = "quote_id"
+        self.sort_reverse = False
+        self._populate_quote_tree()
+
+    def _populate_quote_tree(self):
+        """Re-render the Treeview rows from self.quote_rows in current sort order."""
+        self.quote_tree.delete(*self.quote_tree.get_children())
+        for quote_id, name, status, total, quote_date in self.quote_rows:
+            self.quote_tree.insert(
+                "", "end", values=(quote_id, name, status, f"${total:.2f}", quote_date)
+            )
+        self._update_sort_indicators()
+
+    def _sort_quotes(self, column):
+        """Sort self.quote_rows by the clicked column and refresh the tree.
+
+        Default directions per FR10: Quote ID ascending, Customer alphabetical
+        (A-Z), Status alphabetical, Total ascending, Date by recency (newest
+        first). Clicking the same column again toggles the direction.
+        """
+        col_index = {"quote_id": 0, "customer": 1, "status": 2, "total": 3, "date": 4}[column]
+
+        if self.sort_column == column:
+            self.sort_reverse = not self.sort_reverse
+        else:
+            self.sort_column = column
+            # Date defaults to newest-first (reverse); everything else ascending
+            self.sort_reverse = (column == "date")
+
+        def sort_key(row):
+            value = row[col_index]
+            if column == "date":
+                try:
+                    return datetime.strptime(value, "%d-%m-%Y")
+                except (ValueError, TypeError):
+                    return datetime.min
+            if column == "customer" or column == "status":
+                return str(value).lower()
+            return value  # quote_id, total are already numeric
+
+        self.quote_rows = sorted(self.quote_rows, key=sort_key, reverse=self.sort_reverse)
+        self._populate_quote_tree()
+
+    def _update_sort_indicators(self):
+        """Show an arrow on the currently sorted column's heading."""
+        heading_labels = {
+            "quote_id": "Quote ID", "customer": "Customer",
+            "status": "Status", "total": "Total", "date": "Date"
+        }
+        for col, label in heading_labels.items():
+            if col == self.sort_column:
+                arrow = " ▼" if self.sort_reverse else " ▲"
+                self.quote_tree.heading(col, text=label + arrow)
+            else:
+                self.quote_tree.heading(col, text=label)
 
     # ------------------------------------------------------------------
     # New Quote form (IPO 2)
