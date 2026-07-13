@@ -10,6 +10,7 @@ import customtkinter as ctk
 from database import DatabaseManager
 from auth import AuthManager
 from ui.login_screen import LoginScreen, COLOUR_BG, COLOUR_GREEN, FONT_FAMILY, _center_window
+from ui.dashboard import Dashboard
 
 
 class App(ctk.CTk):
@@ -36,6 +37,8 @@ class App(ctk.CTk):
 
     def show_login(self):
         self._clear_frame()
+        self.geometry("400x400")
+        _center_window(self, 400, 400)
         self.current_frame = LoginScreen(self, self.auth, self.show_dashboard)
 
     def show_dashboard(self, username, role):
@@ -44,23 +47,7 @@ class App(ctk.CTk):
         self.geometry("900x600")
         _center_window(self, 900, 600)
 
-        self.current_frame = ctk.CTkFrame(self, fg_color=COLOUR_BG)
-        self.current_frame.pack(fill="both", expand=True)
-
-        label = ctk.CTkLabel(
-            self.current_frame,
-            text=f"Welcome, {username} ({role})",
-            font=(FONT_FAMILY, 20, "bold"),
-            text_color=COLOUR_GREEN
-        )
-        label.pack(pady=40)
-
-        placeholder = ctk.CTkLabel(
-            self.current_frame,
-            text="Dashboard, Quotes, Jobs and Reports screens will go here.",
-            font=(FONT_FAMILY, 14)
-        )
-        placeholder.pack()
+        self.current_frame = Dashboard(self, self.db, username, role, self.show_login)
 
     def _clear_frame(self):
         if self.current_frame is not None:
