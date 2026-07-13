@@ -7,6 +7,8 @@ home screen with summary tiles and recent activity (Sketch 3).
 
 import customtkinter as ctk
 
+from ui.quotes import QuotesScreen
+
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
 COLOUR_ACCENT_ORANGE = "#d8ab81"
@@ -121,8 +123,10 @@ class Dashboard(ctk.CTkFrame):
 
         if item == "Dashboard":
             self._show_dashboard_home()
+        elif item == "Quotes":
+            QuotesScreen(self.content_frame, self.db)
         else:
-            # Placeholder until each screen (Customers, Quotes, Jobs,
+            # Placeholder until each screen (Customers, Jobs,
             # Reports, Settings) is built
             placeholder = ctk.CTkLabel(
                 self.content_frame, text=f"{item} screen coming soon",
@@ -133,6 +137,13 @@ class Dashboard(ctk.CTkFrame):
     def _clear_content(self):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
+
+    def _open_new_quote_form(self):
+        self.active_item = "Quotes"
+        for name, btn in self.nav_buttons.items():
+            btn.configure(fg_color=COLOUR_ACTIVE_ITEM if name == "Quotes" else "transparent")
+        self._clear_content()
+        QuotesScreen(self.content_frame, self.db, start_on_form=True)
 
     # ------------------------------------------------------------------
     # Dashboard home (Sketch 3)
@@ -176,7 +187,7 @@ class Dashboard(ctk.CTkFrame):
             self.content_frame, text="+ New Quote", font=(FONT_FAMILY, 14, "bold"),
             fg_color=COLOUR_ACCENT_ORANGE, text_color=COLOUR_BLACK,
             corner_radius=20, height=40, width=160,
-            command=lambda: self._on_nav_click("Quotes")
+            command=self._open_new_quote_form
         )
         quick_add.pack(padx=30, pady=(10, 20), anchor="w")
 
