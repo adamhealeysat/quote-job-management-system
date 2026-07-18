@@ -41,9 +41,11 @@ class QuotesScreen(ctk.CTkFrame):
         # Line item widgets currently on the form: list of dicts
         self.line_item_rows = []
         self.customer_map = {}  # display string -> customer_id
+        self.edit_quote_id = None  # None = creating a new quote, else editing
+        self.all_quote_rows = []  # full unfiltered dataset for search
 
         if start_on_form:
-            self._show_new_quote_form()
+            self._show_quote_form()
         else:
             self._show_quote_list()
 
@@ -69,9 +71,25 @@ class QuotesScreen(ctk.CTkFrame):
         new_quote_btn = ctk.CTkButton(
             header, text="+ New Quote", font=(FONT_FAMILY, 13, "bold"),
             fg_color=COLOUR_GREEN, text_color=COLOUR_BLACK, corner_radius=18,
-            height=34, command=self._show_new_quote_form
+            height=34, command=lambda: self._show_quote_form()
         )
         new_quote_btn.pack(side="right")
+
+        # --- Search bar (FR09: customer name, vehicle details, quote ID or status) ---
+        search_row = ctk.CTkFrame(self.body_frame, fg_color=COLOUR_BG)
+        search_row.pack(fill="x", padx=30, pady=(0, 10))
+
+        self.quote_search_entry = ctk.CTkEntry(
+            search_row, placeholder_text="Search by customer, vehicle, quote ID or status",
+            font=(FONT_FAMILY, 12), width=360
+        )
+        self.quote_search_entry.pack(side="left")
+        self.quote_search_entry.bind("<KeyRelease>", lambda e: self._filter_quotes())
+
+        self.quote_result_label = ctk.CTkLabel(
+            search_row, text="", font=(FONT_FAMILY, 11), text_color="#888888"
+        )
+        self.quote_result_label.pack(side="left", padx=(10, 0))
 
         # Treeview for the quote list
         style = ttk.Style()
@@ -98,38 +116,91 @@ class QuotesScreen(ctk.CTkFrame):
         self.quote_tree.column("total", width=100, anchor="e")
         self.quote_tree.column("date", width=120, anchor="center")
 
-        self.quote_tree.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+        self.quote_tree.pack(fill="both", expand=True, padx=30, pady=(0, 10))
+        self.quote_tree.bind("<Double-1>", self._on_quote_row_double_click)
 
-        # Load raw rows (keep real types for correct sorting, not display strings)
-        rows = self.db.run_query(
-            "SELECT q.quote_id, c.customer_name, q.status, q.total_amount, q.quote_date "
+        hint_label = ctk.CTkLabel(
+            self.body_frame, text="Double-click a quote to view or edit it",
+            font=(FONT_FAMILY, 10), text_color="#888888"
+        )
+        hint_label.pack(padx=30, pady=(0, 10), anchor="w")
+
+        # Load full dataset, including vehicle details for search (FR09)
+        self.all_quote_rows = self.db.run_query(
+            "SELECT q.quote_id, c.customer_name, q.status, q.total_amount, q.quote_date, "
+            "c.vehicle_make, c.vehicle_model, c.vehicle_rego "
             "FROM Quotes q JOIN Customers c ON q.customer_id = c.customer_id"
         )
-        self.quote_rows = rows
+        self.quote_rows = list(self.all_quote_rows)
 
         # Default sort: Quote ID ascending
         self.sort_column = "quote_id"
         self.sort_reverse = False
+        self._apply_sort()
         self._populate_quote_tree()
+
+    def _on_quote_row_double_click(self, event):
+        selection = self.quote_tree.selection()
+        if not selection:
+            return
+        values = self.quote_tree.item(selection[0], "values")
+        quote_id = int(values[0])
+        self._show_quote_form(quote_id)
+
+    def _filter_quotes(self):
+        term = self.quote_search_entry.get().strip().lower()
+        if not term:
+            self.quote_rows = list(self.all_quote_rows)
+        else:
+            def matches(row):
+                quote_id, name, status, total, quote_date, make, model, rego = row
+                haystack = f"{quote_id} {name} {status} {make} {model} {rego}".lower()
+                return term in haystack
+            self.quote_rows = [r for r in self.all_quote_rows if matches(r)]
+
+        self._apply_sort()
+        self._populate_quote_tree()
+
+        if term and not self.quote_rows:
+            self.quote_result_label.configure(text="No results found")
+        elif term:
+            self.quote_result_label.configure(text=f"{len(self.quote_rows)} result(s)")
+        else:
+            self.quote_result_label.configure(text="")
 
     def _populate_quote_tree(self):
         """Re-render the Treeview rows from self.quote_rows in current sort order."""
         self.quote_tree.delete(*self.quote_tree.get_children())
-        for quote_id, name, status, total, quote_date in self.quote_rows:
+        for row in self.quote_rows:
+            quote_id, name, status, total, quote_date = row[0], row[1], row[2], row[3], row[4]
             self.quote_tree.insert(
                 "", "end", values=(quote_id, name, status, f"${total:.2f}", quote_date)
             )
         self._update_sort_indicators()
 
+    def _apply_sort(self):
+        """Sort self.quote_rows using the current self.sort_column/self.sort_reverse
+        without changing them (used after filtering, and by _sort_quotes)."""
+        col_index = {"quote_id": 0, "customer": 1, "status": 2, "total": 3, "date": 4}[self.sort_column]
+
+        def sort_key(row):
+            value = row[col_index]
+            if self.sort_column == "date":
+                try:
+                    return datetime.strptime(value, "%d-%m-%Y")
+                except (ValueError, TypeError):
+                    return datetime.min
+            if self.sort_column in ("customer", "status"):
+                return str(value).lower()
+            return value
+
+        self.quote_rows = sorted(self.quote_rows, key=sort_key, reverse=self.sort_reverse)
+
     def _sort_quotes(self, column):
-        """Sort self.quote_rows by the clicked column and refresh the tree.
-
-        Default directions per FR10: Quote ID ascending, Customer alphabetical
-        (A-Z), Status alphabetical, Total ascending, Date by recency (newest
-        first). Clicking the same column again toggles the direction.
+        """Handle a column header click: toggle direction if already sorted
+        by this column, otherwise switch to it using its sensible default
+        direction (FR10).
         """
-        col_index = {"quote_id": 0, "customer": 1, "status": 2, "total": 3, "date": 4}[column]
-
         if self.sort_column == column:
             self.sort_reverse = not self.sort_reverse
         else:
@@ -137,18 +208,7 @@ class QuotesScreen(ctk.CTkFrame):
             # Date defaults to newest-first (reverse); everything else ascending
             self.sort_reverse = (column == "date")
 
-        def sort_key(row):
-            value = row[col_index]
-            if column == "date":
-                try:
-                    return datetime.strptime(value, "%d-%m-%Y")
-                except (ValueError, TypeError):
-                    return datetime.min
-            if column == "customer" or column == "status":
-                return str(value).lower()
-            return value  # quote_id, total are already numeric
-
-        self.quote_rows = sorted(self.quote_rows, key=sort_key, reverse=self.sort_reverse)
+        self._apply_sort()
         self._populate_quote_tree()
 
     def _update_sort_indicators(self):
@@ -168,9 +228,26 @@ class QuotesScreen(ctk.CTkFrame):
     # New Quote form (IPO 2)
     # ------------------------------------------------------------------
 
-    def _show_new_quote_form(self):
+    def _show_quote_form(self, quote_id=None):
         self._clear_body()
         self.line_item_rows = []
+        self.edit_quote_id = quote_id
+        is_edit = quote_id is not None
+
+        existing_quote = None
+        existing_items = []
+        if is_edit:
+            rows = self.db.run_query(
+                "SELECT customer_id, status, notes FROM Quotes WHERE quote_id = ?",
+                (quote_id,)
+            )
+            if rows:
+                existing_quote = rows[0]
+            existing_items = self.db.run_query(
+                "SELECT description, quantity, unit_price, item_type "
+                "FROM QuoteLineItems WHERE quote_id = ?",
+                (quote_id,)
+            )
 
         # Scrollable frame since the form can grow with many line items
         scroll_frame = ctk.CTkScrollableFrame(self.body_frame, fg_color=COLOUR_BG)
@@ -178,7 +255,8 @@ class QuotesScreen(ctk.CTkFrame):
         self.form_container = scroll_frame
 
         title = ctk.CTkLabel(
-            scroll_frame, text="New Quote", font=(FONT_FAMILY, 20, "bold"), text_color=COLOUR_BLACK
+            scroll_frame, text=f"Edit Quote #{quote_id}" if is_edit else "New Quote",
+            font=(FONT_FAMILY, 20, "bold"), text_color=COLOUR_BLACK
         )
         title.pack(anchor="w", pady=(0, 15))
 
@@ -197,7 +275,6 @@ class QuotesScreen(ctk.CTkFrame):
             picker_row, values=[], font=(FONT_FAMILY, 12), width=320
         )
         self.customer_combo.pack(side="left")
-        self._refresh_customer_list()
 
         add_customer_btn = ctk.CTkButton(
             picker_row, text="+ Add Customer", font=(FONT_FAMILY, 11),
@@ -206,6 +283,24 @@ class QuotesScreen(ctk.CTkFrame):
             command=self._open_add_customer_dialog
         )
         add_customer_btn.pack(side="left", padx=(10, 0))
+
+        existing_customer_id = existing_quote[0] if existing_quote else None
+        self._refresh_customer_list(select_customer_id=existing_customer_id)
+
+        # --- Status selection (Pending / Accepted / Declined) ---
+        status_row = ctk.CTkFrame(scroll_frame, fg_color=COLOUR_BG)
+        status_row.pack(fill="x", pady=(0, 15))
+
+        ctk.CTkLabel(
+            status_row, text="Status", font=(FONT_FAMILY, 12), text_color=COLOUR_BLACK
+        ).pack(anchor="w")
+
+        self.status_combo = ctk.CTkComboBox(
+            status_row, values=["Pending", "Accepted", "Declined"],
+            font=(FONT_FAMILY, 12), width=200
+        )
+        self.status_combo.set(existing_quote[1] if existing_quote else "Pending")
+        self.status_combo.pack(anchor="w", pady=(4, 0))
 
         # --- Live totals ---
         self.totals_label = ctk.CTkLabel(
@@ -225,7 +320,14 @@ class QuotesScreen(ctk.CTkFrame):
         self.line_items_frame = ctk.CTkFrame(scroll_frame, fg_color=COLOUR_WHITE, corner_radius=10)
         self.line_items_frame.pack(fill="x")
 
-        self._add_line_item_row()  # start with one row
+        if existing_items:
+            for description, quantity, unit_price, item_type in existing_items:
+                self._add_line_item_row(prefill={
+                    "description": description, "quantity": quantity,
+                    "unit_price": unit_price, "item_type": item_type
+                })
+        else:
+            self._add_line_item_row()  # start with one blank row
 
         add_line_btn = ctk.CTkButton(
             scroll_frame, text="+ Add Line Item", font=(FONT_FAMILY, 12),
@@ -240,6 +342,8 @@ class QuotesScreen(ctk.CTkFrame):
         ).pack(anchor="w")
         self.notes_entry = ctk.CTkTextbox(scroll_frame, height=60, font=(FONT_FAMILY, 12))
         self.notes_entry.pack(fill="x", pady=(4, 15))
+        if existing_quote and existing_quote[2]:
+            self.notes_entry.insert("1.0", existing_quote[2])
 
         # Now place the totals and error labels (created earlier) into the layout
         self.totals_label.pack(anchor="e", pady=(0, 15))
@@ -258,26 +362,31 @@ class QuotesScreen(ctk.CTkFrame):
         cancel_btn.pack(side="left")
 
         save_btn = ctk.CTkButton(
-            button_row, text="Save Quote", font=(FONT_FAMILY, 13, "bold"),
+            button_row, text="Save Changes" if is_edit else "Save Quote",
+            font=(FONT_FAMILY, 13, "bold"),
             fg_color=COLOUR_GREEN, text_color=COLOUR_BLACK,
             corner_radius=18, height=36, width=140,
             command=self._save_quote
         )
         save_btn.pack(side="right")
 
-    def _refresh_customer_list(self):
+    def _refresh_customer_list(self, select_customer_id=None):
         rows = self.db.run_query(
             "SELECT customer_id, customer_name, vehicle_rego FROM Customers ORDER BY customer_name"
         )
         self.customer_map = {}
+        id_to_display = {}
         display_values = []
         for customer_id, name, rego in rows:
             display = f"{name} ({rego})"
             self.customer_map[display] = customer_id
+            id_to_display[customer_id] = display
             display_values.append(display)
 
         self.customer_combo.configure(values=display_values)
-        if display_values:
+        if select_customer_id is not None and select_customer_id in id_to_display:
+            self.customer_combo.set(id_to_display[select_customer_id])
+        elif display_values:
             self.customer_combo.set(display_values[-1])  # most recently added
         else:
             self.customer_combo.set("")
@@ -286,7 +395,7 @@ class QuotesScreen(ctk.CTkFrame):
     # Line item rows
     # ------------------------------------------------------------------
 
-    def _add_line_item_row(self):
+    def _add_line_item_row(self, prefill=None):
         row_frame = ctk.CTkFrame(self.line_items_frame, fg_color=COLOUR_WHITE)
         row_frame.pack(fill="x", padx=10, pady=6)
 
@@ -302,6 +411,12 @@ class QuotesScreen(ctk.CTkFrame):
         type_combo = ctk.CTkComboBox(row_frame, values=["Parts", "Labour"], font=(FONT_FAMILY, 11), width=100)
         type_combo.set("Parts")
         type_combo.pack(side="left", padx=(0, 6))
+
+        if prefill:
+            desc_entry.insert(0, prefill["description"])
+            qty_entry.insert(0, str(prefill["quantity"]))
+            price_entry.insert(0, str(prefill["unit_price"]))
+            type_combo.set(prefill["item_type"])
 
         remove_btn = ctk.CTkButton(
             row_frame, text="✕", width=28, height=28, corner_radius=14,
@@ -473,6 +588,7 @@ class QuotesScreen(ctk.CTkFrame):
             self.error_label.configure(text="Select a customer")
             return
         customer_id = self.customer_map[customer_display]
+        status = self.status_combo.get()
 
         # Validate and collect line items
         parsed_items = []
@@ -514,13 +630,24 @@ class QuotesScreen(ctk.CTkFrame):
         total_labour = sum(i["line_total"] for i in parsed_items if i["item_type"] == "Labour")
         total_amount = total_parts + total_labour
         notes = self.notes_entry.get("1.0", "end").strip() or None
-        quote_date = date.today().strftime("%d-%m-%Y")
 
-        quote_id = self.db.run_update(
-            "INSERT INTO Quotes (customer_id, quote_date, status, total_parts, "
-            "total_labour, total_amount, notes) VALUES (?, ?, 'Pending', ?, ?, ?, ?)",
-            (customer_id, quote_date, total_parts, total_labour, total_amount, notes)
-        )
+        if self.edit_quote_id is None:
+            # Creating a new quote
+            quote_date = date.today().strftime("%d-%m-%Y")
+            quote_id = self.db.run_update(
+                "INSERT INTO Quotes (customer_id, quote_date, status, total_parts, "
+                "total_labour, total_amount, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (customer_id, quote_date, status, total_parts, total_labour, total_amount, notes)
+            )
+        else:
+            # Updating an existing quote (FR06) - quote_date is left untouched
+            quote_id = self.edit_quote_id
+            self.db.run_update(
+                "UPDATE Quotes SET customer_id=?, status=?, total_parts=?, "
+                "total_labour=?, total_amount=?, notes=? WHERE quote_id=?",
+                (customer_id, status, total_parts, total_labour, total_amount, notes, quote_id)
+            )
+            self.db.run_update("DELETE FROM QuoteLineItems WHERE quote_id = ?", (quote_id,))
 
         for item in parsed_items:
             self.db.run_update(

@@ -8,6 +8,7 @@ home screen with summary tiles and recent activity (Sketch 3).
 import customtkinter as ctk
 
 from ui.quotes import QuotesScreen
+from ui.customers import CustomersScreen
 
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
@@ -125,6 +126,8 @@ class Dashboard(ctk.CTkFrame):
             self._show_dashboard_home()
         elif item == "Quotes":
             QuotesScreen(self.content_frame, self.db)
+        elif item == "Customers":
+            CustomersScreen(self.content_frame, self.db)
         else:
             # Placeholder until each screen (Customers, Jobs,
             # Reports, Settings) is built
