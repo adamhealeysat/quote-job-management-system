@@ -102,7 +102,7 @@ class QuotesScreen(ctk.CTkFrame):
         columns = ("quote_id", "customer", "status", "total", "date")
         self.quote_tree = ttk.Treeview(
             self.body_frame, columns=columns, show="headings",
-            style="Quotes.Treeview", height=15
+            style="Quotes.Treeview", height=10
         )
 
         # Column heading labels and click-to-sort bindings (FR10)
