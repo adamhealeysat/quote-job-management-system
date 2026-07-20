@@ -9,6 +9,8 @@ delete with a safeguard against orphaning linked quotes/jobs
 import customtkinter as ctk
 from tkinter import ttk
 
+from ui.validators import validate_customer_fields
+
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
 COLOUR_RED = "#ff3131"
@@ -219,15 +221,14 @@ class CustomersScreen(ctk.CTkFrame):
             year_str = fields["vehicle_year"].get().strip()
             rego = fields["vehicle_rego"].get().strip()
 
-            if not all([name, phone, make, model, year_str, rego]):
-                error_label.configure(text="Please fill in all required fields")
+            is_valid, message = validate_customer_fields(
+                name, phone, email, make, model, year_str, rego
+            )
+            if not is_valid:
+                error_label.configure(text=message)
                 return
 
-            try:
-                year = int(year_str)
-            except ValueError:
-                error_label.configure(text="Vehicle year must be a number")
-                return
+            year = int(year_str)
 
             if is_edit:
                 self.db.run_update(
