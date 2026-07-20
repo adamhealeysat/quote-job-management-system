@@ -19,10 +19,14 @@ DB_FILENAME = "quote_system.db"
 
 
 class DatabaseManager:
-
     """
-    Completes connecting to SQLite database, creating tables,
-    and running queries.
+    Handles connecting to the SQLite database, creating tables,
+    and running queries/updates.
+
+    Attributes:
+        db_path (str): path to the SQLite database file
+        connection: active sqlite3 connection object
+        cursor: active sqlite3 cursor object
     """
 
     def __init__(self, db_path: str = DB_FILENAME):
@@ -30,12 +34,12 @@ class DatabaseManager:
         self.connection = None
         self.cursor = None
 
-    
+    # ------------------------------------------------------------------
     # Connection handling
-    
+    # ------------------------------------------------------------------
 
     def connect(self):
-        """Open a connection to the database file (create if it doesn't exist)"""
+        """Open a connection to the database file (creates it if it doesn't exist)."""
         self.connection = sqlite3.connect(self.db_path)
         # Enforce foreign key constraints (off by default in SQLite)
         self.connection.execute("PRAGMA foreign_keys = ON;")
@@ -49,16 +53,16 @@ class DatabaseManager:
             self.connection = None
             self.cursor = None
 
-    
+    # ------------------------------------------------------------------
     # Table creation
-    
+    # ------------------------------------------------------------------
 
     def create_tables(self):
         """Create all required tables if they do not already exist."""
         if not self.connection:
             self.connect()
 
-        # Users table 
+        # --- Users table ---
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS Users (
                 user_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +74,7 @@ class DatabaseManager:
             );
         """)
 
-        # Customers table
+        # --- Customers table ---
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS Customers (
                 customer_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,7 +88,7 @@ class DatabaseManager:
             );
         """)
 
-        # Quotes table
+        # --- Quotes table ---
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS Quotes (
                 quote_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,7 +103,7 @@ class DatabaseManager:
             );
         """)
 
-        # QuoteLineItems table
+        # --- QuoteLineItems table ---
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS QuoteLineItems (
                 line_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,14 +117,14 @@ class DatabaseManager:
             );
         """)
 
-        # Jobs table
+        # --- Jobs table ---
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS Jobs (
                 job_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 quote_id INTEGER,
                 customer_id INTEGER NOT NULL,
                 job_date TEXT NOT NULL,
-                status TEXT NOT NULL CHECK (status IN ('Pending', 'In Progress', 'Complete')),
+                status TEXT NOT NULL CHECK (status IN ('Pending', 'In Progress', 'Complete', 'Invoiced')),
                 completion_date TEXT,
                 notes TEXT,
                 FOREIGN KEY (quote_id) REFERENCES Quotes(quote_id),
@@ -130,7 +134,9 @@ class DatabaseManager:
 
         self.connection.commit()
 
+    # ------------------------------------------------------------------
     # Generic query helpers
+    # ------------------------------------------------------------------
 
     def run_query(self, query: str, params: tuple = ()):
         """Run a SELECT query and return all matching rows."""
@@ -143,8 +149,10 @@ class DatabaseManager:
         self.connection.commit()
         return self.cursor.lastrowid
 
-# Quick manual test — run this file directly to set up the database
 
+# ------------------------------------------------------------------
+# Quick manual test — run this file directly to set up the database
+# ------------------------------------------------------------------
 if __name__ == "__main__":
     db = DatabaseManager()
     db.connect()
