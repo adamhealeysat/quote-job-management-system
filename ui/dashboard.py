@@ -9,6 +9,7 @@ import customtkinter as ctk
 
 from ui.quotes import QuotesScreen
 from ui.customers import CustomersScreen
+from ui.jobs import JobsScreen
 
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
@@ -125,9 +126,11 @@ class Dashboard(ctk.CTkFrame):
         if item == "Dashboard":
             self._show_dashboard_home()
         elif item == "Quotes":
-            QuotesScreen(self.content_frame, self.db)
+            QuotesScreen(self.content_frame, self.db, on_convert_to_job=self._on_quote_converted)
         elif item == "Customers":
             CustomersScreen(self.content_frame, self.db)
+        elif item == "Jobs":
+            JobsScreen(self.content_frame, self.db)
         else:
             # Placeholder until each screen (Customers, Jobs,
             # Reports, Settings) is built
@@ -146,7 +149,11 @@ class Dashboard(ctk.CTkFrame):
         for name, btn in self.nav_buttons.items():
             btn.configure(fg_color=COLOUR_ACTIVE_ITEM if name == "Quotes" else "transparent")
         self._clear_content()
-        QuotesScreen(self.content_frame, self.db, start_on_form=True)
+        QuotesScreen(self.content_frame, self.db, start_on_form=True, on_convert_to_job=self._on_quote_converted)
+
+    def _on_quote_converted(self, job_id):
+        """Called when a quote is successfully converted to a job - navigate to Jobs."""
+        self._on_nav_click("Jobs")
 
     # ------------------------------------------------------------------
     # Dashboard home (Sketch 3)

@@ -30,9 +30,10 @@ class QuotesScreen(ctk.CTkFrame):
                            (used by the dashboard's "+ New Quote" button)
     """
 
-    def __init__(self, parent, db, start_on_form=False):
+    def __init__(self, parent, db, start_on_form=False, on_convert_to_job=None):
         super().__init__(parent, fg_color=COLOUR_BG)
         self.db = db
+        self.on_convert_to_job = on_convert_to_job
         self.pack(fill="both", expand=True)
 
         self.body_frame = ctk.CTkFrame(self, fg_color=COLOUR_BG)
@@ -43,6 +44,7 @@ class QuotesScreen(ctk.CTkFrame):
         self.customer_map = {}  # display string -> customer_id
         self.edit_quote_id = None  # None = creating a new quote, else editing
         self.all_quote_rows = []  # full unfiltered dataset for search
+        self.selected_quote_id = None
 
         if start_on_form:
             self._show_quote_form()
@@ -59,6 +61,7 @@ class QuotesScreen(ctk.CTkFrame):
 
     def _show_quote_list(self):
         self._clear_body()
+        self.selected_quote_id = None
 
         header = ctk.CTkFrame(self.body_frame, fg_color=COLOUR_BG)
         header.pack(fill="x", padx=30, pady=(20, 10))
@@ -118,12 +121,29 @@ class QuotesScreen(ctk.CTkFrame):
 
         self.quote_tree.pack(fill="both", expand=True, padx=30, pady=(0, 10))
         self.quote_tree.bind("<Double-1>", self._on_quote_row_double_click)
+        self.quote_tree.bind("<<TreeviewSelect>>", self._on_quote_row_select)
 
         hint_label = ctk.CTkLabel(
             self.body_frame, text="Double-click a quote to view or edit it",
             font=(FONT_FAMILY, 10), text_color="#888888"
         )
-        hint_label.pack(padx=30, pady=(0, 10), anchor="w")
+        hint_label.pack(padx=30, pady=(0, 5), anchor="w")
+
+        action_row = ctk.CTkFrame(self.body_frame, fg_color=COLOUR_BG)
+        action_row.pack(fill="x", padx=30, pady=(0, 15))
+
+        self.convert_btn = ctk.CTkButton(
+            action_row, text="Convert to Job", font=(FONT_FAMILY, 12, "bold"),
+            fg_color=COLOUR_GREEN, text_color=COLOUR_BLACK, hover_color="#00a855",
+            corner_radius=16, height=32, width=140, state="disabled",
+            command=self._convert_selected_quote_to_job
+        )
+        self.convert_btn.pack(side="left")
+
+        self.convert_message_label = ctk.CTkLabel(
+            action_row, text="", font=(FONT_FAMILY, 11), text_color=COLOUR_RED
+        )
+        self.convert_message_label.pack(side="left", padx=(10, 0))
 
         # Load full dataset, including vehicle details for search (FR09)
         self.all_quote_rows = self.db.run_query(
@@ -146,6 +166,60 @@ class QuotesScreen(ctk.CTkFrame):
         values = self.quote_tree.item(selection[0], "values")
         quote_id = int(values[0])
         self._show_quote_form(quote_id)
+
+    def _on_quote_row_select(self, event):
+        selection = self.quote_tree.selection()
+        if not selection:
+            self.selected_quote_id = None
+            self.convert_btn.configure(state="disabled")
+            return
+        values = self.quote_tree.item(selection[0], "values")
+        self.selected_quote_id = int(values[0])
+        self.convert_btn.configure(state="normal")
+        self.convert_message_label.configure(text="")
+
+    def _convert_selected_quote_to_job(self):
+        """Convert an Accepted quote into an active Job record (IPO 3)."""
+        if self.selected_quote_id is None:
+            return
+
+        rows = self.db.run_query(
+            "SELECT customer_id, status FROM Quotes WHERE quote_id = ?",
+            (self.selected_quote_id,)
+        )
+        if not rows:
+            self.convert_message_label.configure(text="Quote not found")
+            return
+        customer_id, status = rows[0]
+
+        # IPO 3: validate quote status is Accepted before converting
+        if status != "Accepted":
+            self.convert_message_label.configure(
+                text="Please accept this quote before converting it to a job"
+            )
+            return
+
+        # Avoid creating a duplicate job from the same quote
+        existing_job = self.db.run_query(
+            "SELECT job_id FROM Jobs WHERE quote_id = ?", (self.selected_quote_id,)
+        )
+        if existing_job:
+            self.convert_message_label.configure(
+                text=f"A job (#{existing_job[0][0]}) already exists for this quote"
+            )
+            return
+
+        job_date = date.today().strftime("%d-%m-%Y")
+        job_id = self.db.run_update(
+            "INSERT INTO Jobs (quote_id, customer_id, job_date, status) "
+            "VALUES (?, ?, ?, 'Pending')",
+            (self.selected_quote_id, customer_id, job_date)
+        )
+
+        if self.on_convert_to_job:
+            self.on_convert_to_job(job_id)
+        else:
+            self._show_quote_list()
 
     def _filter_quotes(self):
         term = self.quote_search_entry.get().strip().lower()
