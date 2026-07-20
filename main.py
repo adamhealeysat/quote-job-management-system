@@ -47,7 +47,7 @@ class App(ctk.CTk):
         self.geometry("900x600")
         _center_window(self, 900, 600)
 
-        self.current_frame = Dashboard(self, self.db, username, role, self.show_login)
+        self.current_frame = Dashboard(self, self.db, self.auth, username, role, self.show_login)
 
     def _clear_frame(self):
         if self.current_frame is not None:

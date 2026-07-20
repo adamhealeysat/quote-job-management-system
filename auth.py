@@ -1,9 +1,8 @@
-
 """
 auth.py
 
-Handles user authentication
-Implements login logic from IPO 1 / pseudocode (Criterion 5).
+Handles user authentication for the Quote & Job Management System.
+Implements the login logic from IPO 1 / pseudocode (Criterion 5).
 """
 
 import hashlib
@@ -13,7 +12,7 @@ MAX_LOGIN_ATTEMPTS = 5
 
 
 def hash_password(password: str) -> str:
-    """Return SHA-256 hash of given password."""
+    """Return a SHA-256 hash of the given password."""
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 
@@ -97,6 +96,40 @@ class AuthManager:
             (username, hash_password(password), role)
         )
         return True
+
+    def reset_password(self, user_id: int, new_password: str):
+        """
+        Admin password reset function (Criterion 5 scope addition,
+        flagged in the Possible Errors table to prevent staff lockout
+        with no recovery option). Also clears login_attempts so a
+        previously-locked account can log in again immediately.
+        """
+        self.db.run_update(
+            "UPDATE Users SET password_hash = ?, login_attempts = 0 WHERE user_id = ?",
+            (hash_password(new_password), user_id)
+        )
+
+    def set_active(self, user_id: int, is_active: bool):
+        """Activate or deactivate a user account (FR13)."""
+        self.db.run_update(
+            "UPDATE Users SET is_active = ? WHERE user_id = ?",
+            (1 if is_active else 0, user_id)
+        )
+
+    def update_user(self, user_id: int, role: str):
+        """Update a user's role (FR13: edit account details)."""
+        if role not in ("Staff", "Admin"):
+            raise ValueError("Role must be 'Staff' or 'Admin'")
+        self.db.run_update(
+            "UPDATE Users SET role = ? WHERE user_id = ?",
+            (role, user_id)
+        )
+
+    def get_all_users(self):
+        """Return all users for the Admin user management screen."""
+        return self.db.run_query(
+            "SELECT user_id, username, role, is_active, login_attempts FROM Users ORDER BY username"
+        )
 
 
 if __name__ == "__main__":

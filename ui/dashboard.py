@@ -10,6 +10,8 @@ import customtkinter as ctk
 from ui.quotes import QuotesScreen
 from ui.customers import CustomersScreen
 from ui.jobs import JobsScreen
+from ui.settings import SettingsScreen
+from ui.reports import ReportsScreen
 
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
@@ -36,9 +38,10 @@ class Dashboard(ctk.CTkFrame):
         on_logout   - callback run when the user clicks Logout
     """
 
-    def __init__(self, parent, db, username, role, on_logout):
+    def __init__(self, parent, db, auth, username, role, on_logout):
         super().__init__(parent, fg_color=COLOUR_BG)
         self.db = db
+        self.auth = auth
         self.username = username
         self.role = role
         self.on_logout = on_logout
@@ -126,11 +129,15 @@ class Dashboard(ctk.CTkFrame):
         if item == "Dashboard":
             self._show_dashboard_home()
         elif item == "Quotes":
-            QuotesScreen(self.content_frame, self.db, on_convert_to_job=self._on_quote_converted)
+            QuotesScreen(self.content_frame, self.db, on_convert_to_job=self._on_quote_converted, role=self.role)
         elif item == "Customers":
             CustomersScreen(self.content_frame, self.db)
         elif item == "Jobs":
-            JobsScreen(self.content_frame, self.db)
+            JobsScreen(self.content_frame, self.db, role=self.role)
+        elif item == "Reports":
+            ReportsScreen(self.content_frame, self.db)
+        elif item == "Settings":
+            SettingsScreen(self.content_frame, self.db, self.auth)
         else:
             # Placeholder until each screen (Customers, Jobs,
             # Reports, Settings) is built
@@ -149,7 +156,7 @@ class Dashboard(ctk.CTkFrame):
         for name, btn in self.nav_buttons.items():
             btn.configure(fg_color=COLOUR_ACTIVE_ITEM if name == "Quotes" else "transparent")
         self._clear_content()
-        QuotesScreen(self.content_frame, self.db, start_on_form=True, on_convert_to_job=self._on_quote_converted)
+        QuotesScreen(self.content_frame, self.db, start_on_form=True, on_convert_to_job=self._on_quote_converted, role=self.role)
 
     def _on_quote_converted(self, job_id):
         """Called when a quote is successfully converted to a job - navigate to Jobs."""

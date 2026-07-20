@@ -132,6 +132,34 @@ class DatabaseManager:
             );
         """)
 
+        # --- PartsCatalogue table (FR11) ---
+        # Not in the original Data Dictionary - added to support Admin
+        # parts/pricing management as required by the SRS.
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS PartsCatalogue (
+                part_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                part_name TEXT NOT NULL,
+                unit_cost REAL NOT NULL CHECK (unit_cost >= 0),
+                is_active INTEGER NOT NULL DEFAULT 1
+            );
+        """)
+
+        # --- Settings table (FR12) ---
+        # Generic key-value store, used for the current hourly labour rate.
+        # Not in the original Data Dictionary - added for the same reason
+        # as PartsCatalogue above.
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS Settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT NOT NULL
+            );
+        """)
+
+        # Seed a default labour rate if one doesn't exist yet
+        self.cursor.execute(
+            "INSERT OR IGNORE INTO Settings (setting_key, setting_value) VALUES ('labour_rate', '90.00')"
+        )
+
         self.connection.commit()
 
     # ------------------------------------------------------------------

@@ -32,9 +32,10 @@ STATUS_TAG_COLOURS = {
 class JobsScreen(ctk.CTkFrame):
     """Self-contained Jobs screen, dropped into the dashboard's content panel."""
 
-    def __init__(self, parent, db):
+    def __init__(self, parent, db, role="Staff"):
         super().__init__(parent, fg_color=COLOUR_BG)
         self.db = db
+        self.role = role
         self.pack(fill="both", expand=True)
 
         self.body_frame = ctk.CTkFrame(self, fg_color=COLOUR_BG)
@@ -331,6 +332,19 @@ class JobsScreen(ctk.CTkFrame):
         )
         save_btn.pack(side="right")
 
+        # Admin-only delete (FR15). Invoiced jobs are protected from
+        # deletion to preserve financial/reporting history.
+        if self.role == "Admin":
+            def delete_job():
+                self._confirm_delete_job(job_id)
+
+            delete_btn = ctk.CTkButton(
+                button_row, text="Delete Job", font=(FONT_FAMILY, 12), width=100, height=36,
+                corner_radius=18, fg_color=COLOUR_RED, text_color=COLOUR_WHITE,
+                hover_color="#cc2020", command=delete_job
+            )
+            delete_btn.pack(side="left", padx=(10, 0))
+
         # Convert to Invoice (FR08) - only available once the job is Complete
         if status == "Complete":
             def convert_to_invoice():
@@ -346,6 +360,37 @@ class JobsScreen(ctk.CTkFrame):
                 command=convert_to_invoice
             )
             invoice_btn.pack(side="right", padx=(0, 10))
+
+    def _confirm_delete_job(self, job_id):
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Delete Job")
+        dialog.geometry("360x200")
+        dialog.grab_set()
+
+        ctk.CTkLabel(
+            dialog, text=f"Are you sure you want to delete Job #{job_id}?\nThis cannot be undone.",
+            font=(FONT_FAMILY, 12), text_color=COLOUR_BLACK, wraplength=300, justify="left"
+        ).pack(padx=20, pady=20, fill="both", expand=True)
+
+        button_row = ctk.CTkFrame(dialog, fg_color=COLOUR_BG)
+        button_row.pack(pady=(0, 15))
+
+        def confirm_delete():
+            self.db.run_update("DELETE FROM Jobs WHERE job_id = ?", (job_id,))
+            dialog.destroy()
+            self._show_job_list()
+
+        ctk.CTkButton(
+            button_row, text="Cancel", font=(FONT_FAMILY, 12), width=100, height=34,
+            corner_radius=16, fg_color="#e0e0e0", text_color=COLOUR_BLACK,
+            hover_color="#cccccc", command=dialog.destroy
+        ).pack(side="left", padx=(0, 10))
+
+        ctk.CTkButton(
+            button_row, text="Delete", font=(FONT_FAMILY, 12, "bold"), width=100, height=34,
+            corner_radius=16, fg_color=COLOUR_RED, text_color=COLOUR_WHITE,
+            hover_color="#cc2020", command=confirm_delete
+        ).pack(side="left")
 
     # ------------------------------------------------------------------
     # Formatted invoice display (FR08) - on-screen, printable

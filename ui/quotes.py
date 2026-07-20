@@ -30,10 +30,11 @@ class QuotesScreen(ctk.CTkFrame):
                            (used by the dashboard's "+ New Quote" button)
     """
 
-    def __init__(self, parent, db, start_on_form=False, on_convert_to_job=None):
+    def __init__(self, parent, db, start_on_form=False, on_convert_to_job=None, role="Staff"):
         super().__init__(parent, fg_color=COLOUR_BG)
         self.db = db
         self.on_convert_to_job = on_convert_to_job
+        self.role = role
         self.pack(fill="both", expand=True)
 
         self.body_frame = ctk.CTkFrame(self, fg_color=COLOUR_BG)
@@ -145,6 +146,16 @@ class QuotesScreen(ctk.CTkFrame):
         )
         self.convert_message_label.pack(side="left", padx=(10, 0))
 
+        # Admin-only delete (FR15)
+        if self.role == "Admin":
+            self.delete_quote_btn = ctk.CTkButton(
+                action_row, text="Delete Quote", font=(FONT_FAMILY, 12), width=110, height=32,
+                corner_radius=16, fg_color=COLOUR_RED, text_color=COLOUR_WHITE,
+                hover_color="#cc2020", state="disabled",
+                command=self._delete_selected_quote
+            )
+            self.delete_quote_btn.pack(side="right")
+
         # Load full dataset, including vehicle details for search (FR09)
         self.all_quote_rows = self.db.run_query(
             "SELECT q.quote_id, c.customer_name, q.status, q.total_amount, q.quote_date, "
@@ -172,11 +183,53 @@ class QuotesScreen(ctk.CTkFrame):
         if not selection:
             self.selected_quote_id = None
             self.convert_btn.configure(state="disabled")
+            if self.role == "Admin":
+                self.delete_quote_btn.configure(state="disabled")
             return
         values = self.quote_tree.item(selection[0], "values")
         self.selected_quote_id = int(values[0])
         self.convert_btn.configure(state="normal")
+        if self.role == "Admin":
+            self.delete_quote_btn.configure(state="normal")
         self.convert_message_label.configure(text="")
+
+    def _delete_selected_quote(self):
+        """Delete a quote after confirmation (FR15, Admin only)."""
+        if self.selected_quote_id is None:
+            return
+        quote_id = self.selected_quote_id
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Delete Quote")
+        dialog.geometry("360x200")
+        dialog.grab_set()
+
+        ctk.CTkLabel(
+            dialog, text=f"Are you sure you want to delete Quote #{quote_id}?\n"
+                         "This cannot be undone.",
+            font=(FONT_FAMILY, 12), text_color=COLOUR_BLACK, wraplength=300, justify="left"
+        ).pack(padx=20, pady=20, fill="both", expand=True)
+
+        button_row = ctk.CTkFrame(dialog, fg_color=COLOUR_BG)
+        button_row.pack(pady=(0, 15))
+
+        def confirm_delete():
+            self.db.run_update("DELETE FROM QuoteLineItems WHERE quote_id = ?", (quote_id,))
+            self.db.run_update("DELETE FROM Quotes WHERE quote_id = ?", (quote_id,))
+            dialog.destroy()
+            self._show_quote_list()
+
+        ctk.CTkButton(
+            button_row, text="Cancel", font=(FONT_FAMILY, 12), width=100, height=34,
+            corner_radius=16, fg_color="#e0e0e0", text_color=COLOUR_BLACK,
+            hover_color="#cccccc", command=dialog.destroy
+        ).pack(side="left", padx=(0, 10))
+
+        ctk.CTkButton(
+            button_row, text="Delete", font=(FONT_FAMILY, 12, "bold"), width=100, height=34,
+            corner_radius=16, fg_color=COLOUR_RED, text_color=COLOUR_WHITE,
+            hover_color="#cc2020", command=confirm_delete
+        ).pack(side="left")
 
     def _convert_selected_quote_to_job(self):
         """Convert an Accepted quote into an active Job record (IPO 3)."""
