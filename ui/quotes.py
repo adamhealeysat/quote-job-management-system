@@ -10,6 +10,8 @@ from tkinter import ttk
 import customtkinter as ctk
 from datetime import date, datetime
 
+from ui.validators import validate_customer_fields, validate_line_item, validate_notes
+
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
 COLOUR_RED = "#ff3131"
@@ -585,19 +587,9 @@ class QuotesScreen(ctk.CTkFrame):
         qty_str = row_data["quantity"].get().strip()
         price_str = row_data["unit_price"].get().strip()
 
-        if not description or not qty_str or not price_str:
-            self.error_label.configure(text="Fill in description, quantity and price before confirming")
-            return
-
-        try:
-            quantity = float(qty_str)
-            unit_price = float(price_str)
-        except ValueError:
-            self.error_label.configure(text="Quantity and unit price must be numbers")
-            return
-
-        if quantity <= 0 or unit_price < 0:
-            self.error_label.configure(text="Quantity must be > 0 and price must be >= 0")
+        is_valid, message, _parsed = validate_line_item(description, qty_str, price_str)
+        if not is_valid:
+            self.error_label.configure(text=message)
             return
 
         # Lock the row so it can't be accidentally edited after confirming
@@ -680,15 +672,14 @@ class QuotesScreen(ctk.CTkFrame):
             year_str = fields["vehicle_year"].get().strip()
             rego = fields["vehicle_rego"].get().strip()
 
-            if not all([name, phone, make, model, year_str, rego]):
-                error_label.configure(text="Please fill in all required fields")
+            is_valid, message = validate_customer_fields(
+                name, phone, email, make, model, year_str, rego
+            )
+            if not is_valid:
+                error_label.configure(text=message)
                 return
 
-            try:
-                year = int(year_str)
-            except ValueError:
-                error_label.configure(text="Vehicle year must be a number")
-                return
+            year = int(year_str)
 
             self.db.run_update(
                 "INSERT INTO Customers (customer_name, phone, email, vehicle_make, "
@@ -725,21 +716,13 @@ class QuotesScreen(ctk.CTkFrame):
             price_str = row["unit_price"].get().strip()
             item_type = row["item_type"].get()
 
-            if not description or not qty_str or not price_str:
-                self.error_label.configure(text="Invalid line item - all fields are required")
+            is_valid, message, parsed = validate_line_item(description, qty_str, price_str)
+            if not is_valid:
+                self.error_label.configure(text=message)
                 return
 
-            try:
-                quantity = float(qty_str)
-                unit_price = float(price_str)
-            except ValueError:
-                self.error_label.configure(text="Quantity and unit price must be numbers")
-                return
-
-            if quantity <= 0 or unit_price < 0:
-                self.error_label.configure(text="Invalid line item - check quantity and price")
-                return
-
+            quantity = parsed["quantity"]
+            unit_price = parsed["unit_price"]
             line_total = quantity * unit_price
             parsed_items.append({
                 "description": description,
@@ -753,10 +736,16 @@ class QuotesScreen(ctk.CTkFrame):
             self.error_label.configure(text="Add at least one line item")
             return
 
+        notes_raw = self.notes_entry.get("1.0", "end").strip()
+        is_valid, message = validate_notes(notes_raw, max_length=500)
+        if not is_valid:
+            self.error_label.configure(text=message)
+            return
+
         total_parts = sum(i["line_total"] for i in parsed_items if i["item_type"] == "Parts")
         total_labour = sum(i["line_total"] for i in parsed_items if i["item_type"] == "Labour")
         total_amount = total_parts + total_labour
-        notes = self.notes_entry.get("1.0", "end").strip() or None
+        notes = notes_raw or None
 
         if self.edit_quote_id is None:
             # Creating a new quote

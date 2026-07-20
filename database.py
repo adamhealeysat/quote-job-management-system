@@ -14,6 +14,7 @@ Tables created (from Data Dictionary, Criterion 5):
 
 import sqlite3
 import os
+import csv
 
 DB_FILENAME = "quote_system.db"
 
@@ -176,6 +177,78 @@ class DatabaseManager:
         self.cursor.execute(query, params)
         self.connection.commit()
         return self.cursor.lastrowid
+
+    # ------------------------------------------------------------------
+    # Backup & Export (Criterion 5, Possible Errors table: "SQLite
+    # database file becomes corrupted or is accidentally deleted...
+    # System may include an export/backup allowing the database to be
+    # copied. Advise client to backup regularly.")
+    # ------------------------------------------------------------------
+
+    def backup_database(self, destination_path: str):
+        """
+        Copy the live database to destination_path using SQLite's
+        built-in online backup API. This is used instead of a raw file
+        copy (e.g. shutil.copy) because it is safe to run while the
+        application still has the database open, avoiding the risk of
+        copying a half-written file.
+        """
+        if not self.connection:
+            raise RuntimeError("Database is not connected")
+
+        backup_connection = sqlite3.connect(destination_path)
+        with backup_connection:
+            self.connection.backup(backup_connection)
+        backup_connection.close()
+
+    def export_all_to_csv(self, destination_folder: str):
+        """
+        Export Customers, Quotes, QuoteLineItems and Jobs to separate
+        CSV files in destination_folder. This is the scaled-back
+        replacement for PDF report generation noted in the Critical
+        Reflection on Designs (Criterion 4/5) - the Reports module was
+        cut back from PDF generation to CSV/TXT export.
+
+        Returns a list of the file paths written.
+        """
+        tables = {
+            "customers.csv": (
+                "Customers",
+                ["customer_id", "customer_name", "phone", "email",
+                 "vehicle_make", "vehicle_model", "vehicle_year", "vehicle_rego"],
+            ),
+            "quotes.csv": (
+                "Quotes",
+                ["quote_id", "customer_id", "quote_date", "status",
+                 "total_parts", "total_labour", "total_amount", "notes"],
+            ),
+            "quote_line_items.csv": (
+                "QuoteLineItems",
+                ["line_id", "quote_id", "description", "quantity",
+                 "unit_price", "item_type", "line_total"],
+            ),
+            "jobs.csv": (
+                "Jobs",
+                ["job_id", "quote_id", "customer_id", "job_date", "status",
+                 "completion_date", "notes"],
+            ),
+        }
+
+        os.makedirs(destination_folder, exist_ok=True)
+        exported_paths = []
+
+        for filename, (table_name, columns) in tables.items():
+            column_list = ", ".join(columns)
+            rows = self.run_query(f"SELECT {column_list} FROM {table_name}")
+
+            file_path = os.path.join(destination_folder, filename)
+            with open(file_path, "w", newline="", encoding="utf-8") as csv_file:
+                writer = csv.writer(csv_file)
+                writer.writerow(columns)
+                writer.writerows(rows)
+            exported_paths.append(file_path)
+
+        return exported_paths
 
 
 # ------------------------------------------------------------------

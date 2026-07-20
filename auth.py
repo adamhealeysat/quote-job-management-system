@@ -7,6 +7,7 @@ Implements the login logic from IPO 1 / pseudocode (Criterion 5).
 
 import hashlib
 from database import DatabaseManager
+from ui.validators import validate_username
 
 MAX_LOGIN_ATTEMPTS = 5
 
@@ -84,6 +85,10 @@ class AuthManager:
         if role not in ("Staff", "Admin"):
             raise ValueError("Role must be 'Staff' or 'Admin'")
 
+        is_valid, message = validate_username(username)
+        if not is_valid:
+            raise ValueError(message)
+
         existing = self.db.run_query(
             "SELECT user_id FROM Users WHERE username = ?", (username,)
         )
@@ -116,14 +121,32 @@ class AuthManager:
             (1 if is_active else 0, user_id)
         )
 
-    def update_user(self, user_id: int, role: str):
-        """Update a user's role (FR13: edit account details)."""
+    def update_user(self, user_id: int, username: str, role: str) -> tuple:
+        """
+        Update a user's username and role (FR13: edit account details).
+
+        Returns (success: bool, message: str). Fails if the new username
+        is invalid or already taken by a different account.
+        """
         if role not in ("Staff", "Admin"):
             raise ValueError("Role must be 'Staff' or 'Admin'")
-        self.db.run_update(
-            "UPDATE Users SET role = ? WHERE user_id = ?",
-            (role, user_id)
+
+        is_valid, message = validate_username(username)
+        if not is_valid:
+            return False, message
+
+        existing = self.db.run_query(
+            "SELECT user_id FROM Users WHERE username = ? AND user_id != ?",
+            (username, user_id)
         )
+        if existing:
+            return False, "That username is already taken"
+
+        self.db.run_update(
+            "UPDATE Users SET username = ?, role = ? WHERE user_id = ?",
+            (username, role, user_id)
+        )
+        return True, ""
 
     def get_all_users(self):
         """Return all users for the Admin user management screen."""
