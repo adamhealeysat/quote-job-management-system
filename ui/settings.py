@@ -1,13 +1,23 @@
 """
-ui/settings.py
+ui/settings.py - Quote & Job Management System
 
 Admin-only Settings screen: manage the parts catalogue and labour rate
 (FR11, FR12) and manage staff/admin user accounts including password
-reset (FR13, Criterion 5 scope addition).
+reset (FR13, Criterion 5 Undefined scope addition).
+
+@author ***Adam Healey***
 """
 
 import customtkinter as ctk
-from tkinter import ttk
+from tkinter import ttk, filedialog
+from datetime import datetime
+
+from ui.validators import (
+    validate_part_name,
+    validate_currency_amount,
+    validate_username,
+    validate_password,
+)
 
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
@@ -16,7 +26,7 @@ COLOUR_BLACK = "#000000"
 COLOUR_BG = "#f5f5f5"
 FONT_FAMILY = "Canva Sans"
 
-TABS = ["Parts Catalogue", "Labour Rate", "User Accounts"]
+TABS = ["Parts Catalogue", "Labour Rate", "User Accounts", "Backup & Export"]
 
 
 class SettingsScreen(ctk.CTkFrame):
@@ -75,6 +85,8 @@ class SettingsScreen(ctk.CTkFrame):
             self._render_labour_rate_tab()
         elif self.active_tab == "User Accounts":
             self._render_users_tab()
+        elif self.active_tab == "Backup & Export":
+            self._render_backup_tab()
 
     # ------------------------------------------------------------------
     # Parts Catalogue (FR11)
@@ -95,18 +107,20 @@ class SettingsScreen(ctk.CTkFrame):
         def add_part():
             name = name_entry.get().strip()
             cost_str = cost_entry.get().strip()
-            if not name or not cost_str:
-                error_label.configure(text="Enter a part name and unit cost")
+
+            is_valid, message = validate_part_name(name)
+            if not is_valid:
+                error_label.configure(text=message)
                 error_label.pack(anchor="w", pady=(0, 5))
                 return
-            try:
-                cost = float(cost_str)
-                if cost < 0:
-                    raise ValueError
-            except ValueError:
-                error_label.configure(text="Unit cost must be a number >= 0")
+
+            is_valid, message = validate_currency_amount(cost_str, "Unit cost")
+            if not is_valid:
+                error_label.configure(text=message)
                 error_label.pack(anchor="w", pady=(0, 5))
                 return
+
+            cost = float(cost_str)
 
             self.db.run_update(
                 "INSERT INTO PartsCatalogue (part_name, unit_cost, is_active) VALUES (?, ?, 1)",
@@ -202,14 +216,14 @@ class SettingsScreen(ctk.CTkFrame):
 
         def update_rate():
             rate_str = rate_entry.get().strip()
-            try:
-                rate = float(rate_str)
-                if rate < 0:
-                    raise ValueError
-            except ValueError:
-                error_label.configure(text="Enter a valid rate >= 0")
+
+            is_valid, message = validate_currency_amount(rate_str, "Labour rate")
+            if not is_valid:
+                error_label.configure(text=message)
                 error_label.pack(anchor="w", pady=(8, 0))
                 return
+
+            rate = float(rate_str)
             self.db.run_update(
                 "UPDATE Settings SET setting_value=? WHERE setting_key='labour_rate'",
                 (f"{rate:.2f}",)
@@ -247,10 +261,19 @@ class SettingsScreen(ctk.CTkFrame):
             username = username_entry.get().strip()
             password = password_entry.get()
             role = role_combo.get()
-            if not username or not password:
-                error_label.configure(text="Enter a username and temporary password")
+
+            is_valid, message = validate_username(username)
+            if not is_valid:
+                error_label.configure(text=message)
                 error_label.pack(anchor="w", pady=(0, 5))
                 return
+
+            is_valid, message = validate_password(password)
+            if not is_valid:
+                error_label.configure(text=message)
+                error_label.pack(anchor="w", pady=(0, 5))
+                return
+
             created = self.auth.create_user(username, password, role)
             if not created:
                 error_label.configure(text="That username is already taken")
@@ -327,6 +350,74 @@ class SettingsScreen(ctk.CTkFrame):
         )
         reset_btn.pack(side="left")
 
+        def open_edit_dialog():
+            user_id = get_selected_user_id()
+            if user_id is None:
+                return
+            self._open_edit_account_dialog(user_id)
+
+        edit_btn = ctk.CTkButton(
+            action_row, text="Edit Account", font=(FONT_FAMILY, 12),
+            fg_color="#e0e0e0", text_color=COLOUR_BLACK, hover_color="#cccccc",
+            corner_radius=16, height=32, command=open_edit_dialog
+        )
+        edit_btn.pack(side="left", padx=(8, 0))
+
+    def _open_edit_account_dialog(self, user_id):
+        """Edit a user's username and role (FR13: edit account details)."""
+        current = self.db.run_query(
+            "SELECT username, role FROM Users WHERE user_id=?", (user_id,)
+        )
+        if not current:
+            return
+        current_username, current_role = current[0]
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Edit Account")
+        dialog.geometry("320x260")
+        dialog.grab_set()
+
+        ctk.CTkLabel(
+            dialog, text="Username", font=(FONT_FAMILY, 12), text_color=COLOUR_BLACK
+        ).pack(anchor="w", padx=20, pady=(20, 0))
+        username_entry = ctk.CTkEntry(dialog, font=(FONT_FAMILY, 12), width=260)
+        username_entry.insert(0, current_username)
+        username_entry.pack(padx=20, pady=(5, 15))
+
+        ctk.CTkLabel(
+            dialog, text="Role", font=(FONT_FAMILY, 12), text_color=COLOUR_BLACK
+        ).pack(anchor="w", padx=20)
+        role_combo = ctk.CTkComboBox(dialog, values=["Staff", "Admin"], font=(FONT_FAMILY, 12), width=260)
+        role_combo.set(current_role)
+        role_combo.pack(padx=20, pady=(5, 15))
+
+        error_label = ctk.CTkLabel(dialog, text="", font=(FONT_FAMILY, 10), text_color=COLOUR_RED)
+        error_label.pack()
+
+        def confirm_edit():
+            new_username = username_entry.get().strip()
+            new_role = role_combo.get()
+
+            is_valid, message = validate_username(new_username)
+            if not is_valid:
+                error_label.configure(text=message)
+                return
+
+            success, message = self.auth.update_user(user_id, new_username, new_role)
+            if not success:
+                error_label.configure(text=message)
+                return
+
+            dialog.destroy()
+            self._render_users_tab()
+
+        confirm_btn = ctk.CTkButton(
+            dialog, text="Save Changes", font=(FONT_FAMILY, 12, "bold"),
+            fg_color=COLOUR_GREEN, text_color=COLOUR_BLACK, corner_radius=16,
+            height=34, command=confirm_edit
+        )
+        confirm_btn.pack(pady=10)
+
     def _open_password_reset_dialog(self, user_id):
         dialog = ctk.CTkToplevel(self)
         dialog.title("Reset Password")
@@ -345,8 +436,9 @@ class SettingsScreen(ctk.CTkFrame):
 
         def confirm_reset():
             new_password = new_pw_entry.get()
-            if len(new_password) < 4:
-                error_label.configure(text="Password must be at least 4 characters")
+            is_valid, message = validate_password(new_password)
+            if not is_valid:
+                error_label.configure(text=message)
                 return
             self.auth.reset_password(user_id, new_password)
             dialog.destroy()
@@ -358,3 +450,78 @@ class SettingsScreen(ctk.CTkFrame):
             height=34, command=confirm_reset
         )
         confirm_btn.pack(pady=10)
+
+    # ------------------------------------------------------------------
+    # Backup & Export (Criterion 5, Possible Errors: DB corruption/loss
+    # is high-impact with no recovery option in the original scope)
+    # ------------------------------------------------------------------
+
+    def _render_backup_tab(self):
+        info_label = ctk.CTkLabel(
+            self.content_frame,
+            text="Back up the database file, or export the core records to CSV.",
+            font=(FONT_FAMILY, 13),
+            text_color=COLOUR_BLACK
+        )
+        info_label.pack(anchor="w", pady=(0, 5))
+
+        note_label = ctk.CTkLabel(
+            self.content_frame,
+            text="A backup copies the entire quote_system.db file, which can be\n"
+                 "restored by replacing the file the app reads from. CSV export\n"
+                 "produces plain-text copies of Customers, Quotes, Quote Line\n"
+                 "Items and Jobs for use in a spreadsheet.",
+            font=(FONT_FAMILY, 11), text_color="#888888", justify="left"
+        )
+        note_label.pack(anchor="w", pady=(0, 20))
+
+        status_label = ctk.CTkLabel(
+            self.content_frame, text="", font=(FONT_FAMILY, 11), text_color=COLOUR_GREEN
+        )
+
+        def show_status(text, is_error=False):
+            status_label.configure(text=text, text_color=COLOUR_RED if is_error else COLOUR_GREEN)
+            status_label.pack(anchor="w", pady=(10, 0))
+
+        def run_backup():
+            default_name = f"orbost_backup_{datetime.today().strftime('%Y-%m-%d_%H%M')}.db"
+            destination = filedialog.asksaveasfilename(
+                title="Save Database Backup",
+                defaultextension=".db",
+                initialfile=default_name,
+                filetypes=[("SQLite Database", "*.db"), ("All Files", "*.*")],
+            )
+            if not destination:
+                return  # user cancelled
+            try:
+                self.db.backup_database(destination)
+                show_status(f"Backup saved to {destination}")
+            except Exception:
+                show_status("Backup failed - check the destination is writable", is_error=True)
+
+        def run_export():
+            destination_folder = filedialog.askdirectory(title="Choose Export Folder")
+            if not destination_folder:
+                return  # user cancelled
+            try:
+                exported = self.db.export_all_to_csv(destination_folder)
+                show_status(f"Exported {len(exported)} CSV file(s) to {destination_folder}")
+            except Exception:
+                show_status("Export failed - check the destination is writable", is_error=True)
+
+        button_row = ctk.CTkFrame(self.content_frame, fg_color=COLOUR_BG)
+        button_row.pack(fill="x")
+
+        backup_btn = ctk.CTkButton(
+            button_row, text="Backup Database", font=(FONT_FAMILY, 12, "bold"),
+            fg_color=COLOUR_GREEN, text_color=COLOUR_BLACK, corner_radius=16,
+            height=34, width=170, command=run_backup
+        )
+        backup_btn.pack(side="left", padx=(0, 8))
+
+        export_btn = ctk.CTkButton(
+            button_row, text="Export All Data to CSV", font=(FONT_FAMILY, 12, "bold"),
+            fg_color="#d8ab81", text_color=COLOUR_BLACK, corner_radius=16,
+            height=34, width=190, command=run_export
+        )
+        export_btn.pack(side="left")

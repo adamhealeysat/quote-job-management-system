@@ -1,9 +1,11 @@
 """
-ui/customers.py
+ui/customers.py - Quote & Job Management System
 
 Customers screen: list with search (IPO 4), add/edit customer, and
 delete with a safeguard against orphaning linked quotes/jobs
 (Possible Errors table, Criterion 5).
+
+@author ***Adam Healey***
 """
 
 import customtkinter as ctk

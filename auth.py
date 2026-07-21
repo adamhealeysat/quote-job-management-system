@@ -1,8 +1,10 @@
 """
-auth.py
+auth.py - Quote & Job Management System
 
 Handles user authentication for the Quote & Job Management System.
 Implements the login logic from IPO 1 / pseudocode (Criterion 5).
+
+@author ***Adam Healey***
 """
 
 import hashlib

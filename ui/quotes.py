@@ -1,8 +1,10 @@
 """
-ui/quotes.py
+ui/quotes.py - Quote & Job Management System
 
 Quotes screen: list of saved quotes (FR05) plus a Create New Quote form
 implementing IPO 2 / the save_quote pseudocode from Criterion 5.
+
+@author ***Adam Healey***
 """
 
 import tkinter as tk

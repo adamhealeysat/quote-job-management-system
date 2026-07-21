@@ -1,9 +1,11 @@
 """
-ui/jobs.py
+ui/jobs.py - Quote & Job Management System
 
 Jobs screen: list of active/completed jobs (FR07) with colour-coded
 status, sortable/searchable columns, and a detail view for updating
 job status and adding notes.
+
+@author ***Adam Healey***
 """
 
 import os
@@ -11,6 +13,8 @@ import tempfile
 from tkinter import ttk
 import customtkinter as ctk
 from datetime import date, datetime
+
+from ui.validators import validate_job_notes
 
 COLOUR_GREEN = "#00bf63"
 COLOUR_WHITE = "#ffffff"
@@ -312,7 +316,14 @@ class JobsScreen(ctk.CTkFrame):
 
         def save_changes():
             new_status = status_combo.get()
-            new_notes = notes_box.get("1.0", "end").strip() or None
+            new_notes_raw = notes_box.get("1.0", "end").strip()
+
+            is_valid, message = validate_job_notes(new_notes_raw)
+            if not is_valid:
+                error_label.configure(text=message)
+                return
+
+            new_notes = new_notes_raw or None
             new_completion_date = completion_date
 
             if new_status == "Complete" and not completion_date:

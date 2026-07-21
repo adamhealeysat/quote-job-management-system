@@ -1,5 +1,5 @@
 """
-database.py
+database.py - Quote & Job Management System
 
 Handles all SQLite database connection and table creation for the
 Orbost Auto Electrics Quote & Job Management System.
@@ -10,6 +10,7 @@ Tables created (from Data Dictionary, Criterion 5):
     - Quotes
     - QuoteLineItems
     - Jobs
+@author ***Adam healey***
 """
 
 import sqlite3
