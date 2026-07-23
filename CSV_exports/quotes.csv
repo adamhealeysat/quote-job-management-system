@@ -1,0 +1,2 @@
+quote_id,customer_id,quote_date,status,total_parts,total_labour,total_amount,notes
+1,1,20-07-2026,Accepted,300.0,155.0,455.0,

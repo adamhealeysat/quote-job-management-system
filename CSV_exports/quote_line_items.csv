@@ -1,0 +1,3 @@
+line_id,quote_id,description,quantity,unit_price,item_type,line_total
+1,1,Labour,1.0,155.0,Labour,155.0
+2,1,Alternator,1.0,300.0,Parts,300.0
